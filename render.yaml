@@ -2,26 +2,15 @@ services:
   - type: web
     name: apoyo-mental-api
     runtime: python
-    repo: https://github.com/Elverga1/apoyo-mental-api
+    repo: https://github.com/Elvergal/apoyo-mental-api
     plan: free
     region: oregon
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend.main_prod:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: apoyo-mental-db
-          property: connectionString
       - key: SECRET_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
         value: http://localhost:5173
       - key: ENVIRONMENT
         value: production
-
-  - type: database
-    name: apoyo-mental-db
-    plan: free
-    region: oregon
-    databaseName: apoyo_mental
-    user: apoyo_user
