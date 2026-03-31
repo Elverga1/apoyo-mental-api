@@ -1,0 +1,20 @@
+============================================================
+REPORTE DE ENTRENAMIENTO - CLASIFICADOR DE DEPRESIÓN
+============================================================
+
+Muestras totales: 1977
+Features: 1778
+Accuracy: 0.5278 (52.78%)
+Validación cruzada: 0.5437 (54.37%)
+
+Top 10 palabras más importantes:
+  - duermo: 0.0169
+  - veces: 0.0146
+  - mal: 0.0146
+  - hoy: 0.0142
+  - puedo: 0.0139
+  - triste: 0.0136
+  - cuesta: 0.0130
+  - día: 0.0129
+  - mejor: 0.0121
+  - cansado: 0.0118
