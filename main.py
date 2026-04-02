@@ -19,24 +19,14 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 10080
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./apoyo_mental.db")
+DATABASE_URL = "sqlite:///./apoyo_mental.db"
 
-if DATABASE_URL.startswith("postgresql"):
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-else:
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
+engine = create_engine(
+    DATABASE_URL, 
+    connect_args={"check_same_thread": False}
+)
 # ========== MODELOS ==========
 class User(Base):
     __tablename__ = "users"
