@@ -1,8 +1,10 @@
-# main.py - Punto de entrada completo
+# main.py - Versión corregida
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -16,17 +18,15 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 10080
 
 # ========== BASE DE DATOS ==========
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-import os
-
 DATABASE_URL = "sqlite:///./apoyo_mental.db"
 
 engine = create_engine(
     DATABASE_URL, 
     connect_args={"check_same_thread": False}
 )
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()  # <-- Base DEFINIDA AQUÍ
+
 # ========== MODELOS ==========
 class User(Base):
     __tablename__ = "users"
@@ -69,6 +69,14 @@ class Assessment(Base):
 # Crear tablas
 Base.metadata.create_all(bind=engine)
 
+# ========== DEPENDENCIA DB ==========
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 # ========== SCHEMAS ==========
 class UserCreate(BaseModel):
     email: str
@@ -101,7 +109,7 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-def authenticate_user(db: Session, username: str, password: str):
+def authenticate_user(db: SessionLocal, username: str, password: str):
     user = db.query(User).filter(User.username == username).first()
     if not user:
         return False
@@ -116,7 +124,7 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def get_current_user(token: str = Depends(oauth2_scheme), db: SessionLocal = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Credenciales inválidas",
@@ -154,7 +162,7 @@ async def health():
     return {"status": "healthy"}
 
 @app.post("/register", response_model=UserResponse)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
+def register(user_data: UserCreate, db: SessionLocal = Depends(get_db)):
     # Verificar si ya existe
     db_user = db.query(User).filter(User.email == user_data.email).first()
     if db_user:
@@ -178,7 +186,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     return db_user
 
 @app.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: SessionLocal = Depends(get_db)):
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
