@@ -184,7 +184,14 @@ def register(user_data: UserCreate, db=Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return db_user
+    return {
+        "id": db_user.id,
+        "email": db_user.email,
+        "username": db_user.username,
+        "full_name": db_user.full_name,
+        "is_active": db_user.is_active,
+        "created_at": db_user.created_at
+    }
 
 @app.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
