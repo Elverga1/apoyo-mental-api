@@ -70,6 +70,9 @@ class Token(BaseModel):
     token_type: str
 
 # ========== AUTENTICACIÓN ==========
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+# Funciones de hash (sin bcrypt)
 def get_password_hash(password: str) -> str:
     """Hashea contraseña usando SHA256"""
     salt = secrets.token_hex(16)
@@ -85,6 +88,41 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     except:
         return False
 
+def authenticate_user(db, username: str, password: str):
+    """Autentica un usuario"""
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        return False
+    if not verify_password(password, user.hashed_password):
+        return False
+    return user
+
+def create_access_token(data: dict):
+    """Crea un token JWT"""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# Dependencia para obtener usuario actual desde el token
+def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciales inválidas",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        raise credentials_exception
+    return user
 # ========== APP ==========
 app = FastAPI(title="Apoyo Mental API")
 
