@@ -12,23 +12,14 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./apoyo_mental.db")
+DATABASE_URL = "sqlite:///./apoyo_mental.db"
 
-print(f"📌 Conectando a: {'PostgreSQL' if DATABASE_URL.startswith('postgresql') else 'SQLite'}")
+print("📌 Conectando a: SQLite (temporal)")
 
-if DATABASE_URL.startswith("postgresql"):
-    engine = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_size=10,
-        max_overflow=20
-    )
-else:
-    # Configuración para SQLite local
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False}
-    )
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}
+)
 
 # ========== MODELOS ==========
 class User(Base):
