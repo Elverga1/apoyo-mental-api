@@ -7,10 +7,11 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel
 from typing import Optional
 import os
+import hashlib
+import secrets
 
 # ========== CONFIGURACIÓN ==========
 SECRET_KEY = os.getenv("SECRET_KEY", "A9SdAQv0Zhvt5vnJlpcDiiAV4m4OTds48EYts0ysBcw")
@@ -69,40 +70,20 @@ class Token(BaseModel):
     token_type: str
 
 # ========== AUTENTICACIÓN ==========
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+def get_password_hash(password: str) -> str:
+    """Hashea contraseña usando SHA256"""
+    salt = secrets.token_hex(16)
+    hash_obj = hashlib.sha256((password + salt).encode())
+    return f"{salt}${hash_obj.hexdigest()}"
 
-def verify_password(plain, hashed):
-    return pwd_context.verify(plain, hashed)
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-def authenticate_user(db, username: str, password: str):
-    user = db.query(User).filter(User.username == username).first()
-    if not user or not verify_password(password, user.hashed_password):
-        return False
-    return user
-
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
-    credentials_exception = HTTPException(status_code=401, detail="Credenciales inválidas")
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verifica contraseña"""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    user = db.query(User).filter(User.username == username).first()
-    if user is None:
-        raise credentials_exception
-    return user
+        salt, hash_value = hashed_password.split("$")
+        test_hash = hashlib.sha256((plain_password + salt).encode()).hexdigest()
+        return test_hash == hash_value
+    except:
+        return False
 
 # ========== APP ==========
 app = FastAPI(title="Apoyo Mental API")
