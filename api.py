@@ -1,25 +1,28 @@
-# api.py - Versión completa basada en simple_api.py
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+# api.py - Versión corregida con orden correcto
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel
+from typing import Optional
 import os
 
+# ========== CONFIGURACIÓN ==========
+SECRET_KEY = os.getenv("SECRET_KEY", "A9SdAQv0Zhvt5vnJlpcDiiAV4m4OTds48EYts0ysBcw")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 10080
+
+# ========== BASE DE DATOS ==========
 DATABASE_URL = "sqlite:///./apoyo_mental.db"
 
-print("📌 Conectando a: SQLite (temporal)")
-
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()  # <--- Base definida correctamente
 
 # ========== MODELOS ==========
 class User(Base):
@@ -30,34 +33,6 @@ class User(Base):
     hashed_password = Column(String)
     full_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
-    is_admin = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class Conversation(Base):
-    __tablename__ = "conversations"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer)
-    title = Column(String, default="Nueva conversación")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class Message(Base):
-    __tablename__ = "messages"
-    id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(Integer)
-    role = Column(String)
-    content = Column(Text)
-    risk_level = Column(String, default="bajo")
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class Assessment(Base):
-    __tablename__ = "assessments"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer)
-    type = Column(String)
-    score = Column(Integer)
-    severity = Column(String)
-    answers = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 # Crear tablas
@@ -85,7 +60,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     is_active: bool
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -97,17 +72,15 @@ class Token(BaseModel):
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
 
 def get_password_hash(password):
     return pwd_context.hash(password)
 
 def authenticate_user(db, username: str, password: str):
     user = db.query(User).filter(User.username == username).first()
-    if not user:
-        return False
-    if not verify_password(password, user.hashed_password):
+    if not user or not verify_password(password, user.hashed_password):
         return False
     return user
 
@@ -115,14 +88,10 @@ def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Credenciales inválidas",
-    )
+    credentials_exception = HTTPException(status_code=401, detail="Credenciales inválidas")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
@@ -136,7 +105,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
     return user
 
 # ========== APP ==========
-app = FastAPI(title="Apoyo Mental API", version="2.0.0")
+app = FastAPI(title="Apoyo Mental API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -146,7 +115,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ========== ENDPOINTS BÁSICOS ==========
+# ========== ENDPOINTS ==========
 @app.get("/")
 async def root():
     return {"message": "Apoyo Mental API", "status": "running"}
@@ -155,48 +124,32 @@ async def root():
 async def health():
     return {"status": "healthy"}
 
-# ========== ENDPOINTS DE AUTENTICACIÓN ==========
 @app.post("/register", response_model=UserResponse)
 def register(user_data: UserCreate, db=Depends(get_db)):
-    # Verificar si ya existe
-    db_user = db.query(User).filter(User.email == user_data.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email ya registrado")
-    
-    db_user = db.query(User).filter(User.username == user_data.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Usuario ya existe")
-    
-    # Crear usuario
-    hashed_password = get_password_hash(user_data.password)
-    db_user = User(
+    if db.query(User).filter(User.email == user_data.email).first():
+        raise HTTPException(400, "Email ya registrado")
+    if db.query(User).filter(User.username == user_data.username).first():
+        raise HTTPException(400, "Usuario ya existe")
+
+    hashed = get_password_hash(user_data.password)
+    user = User(
         email=user_data.email,
         username=user_data.username,
-        hashed_password=hashed_password,
+        hashed_password=hashed,
         full_name=user_data.full_name
     )
-    db.add(db_user)
+    db.add(user)
     db.commit()
-    db.refresh(db_user)
-    return {
-        "id": db_user.id,
-        "email": db_user.email,
-        "username": db_user.username,
-        "full_name": db_user.full_name,
-        "is_active": db_user.is_active,
-        "created_at": db_user.created_at
-    }
+    db.refresh(user)
+    return user
 
 @app.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario o contraseña incorrectos",
-        )
-    access_token = create_access_token(data={"sub": user.username})
-    return {"access_token": access_token, "token_type": "bearer"}
+        raise HTTPException(401, detail="Usuario o contraseña incorrectos")
+    token = create_access_token(data={"sub": user.username})
+    return {"access_token": token, "token_type": "bearer"}
 
 @app.get("/me")
 def get_me(current_user: User = Depends(get_current_user)):
@@ -206,72 +159,3 @@ def get_me(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "full_name": current_user.full_name
     }
-
-# ========== ENDPOINTS DE CONVERSACIONES ==========
-@app.post("/conversations")
-def create_conversation(current_user: User = Depends(get_current_user), db=Depends(get_db)):
-    conversation = Conversation(user_id=current_user.id)
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
-    return {"id": conversation.id, "title": conversation.title, "created_at": conversation.created_at}
-
-@app.get("/conversations")
-def get_conversations(current_user: User = Depends(get_current_user), db=Depends(get_db)):
-    conversations = db.query(Conversation).filter(Conversation.user_id == current_user.id).all()
-    return conversations
-
-@app.post("/conversations/{conv_id}/messages")
-def send_message(conv_id: int, message: dict, current_user: User = Depends(get_current_user), db=Depends(get_db)):
-    # Verificar que la conversación pertenece al usuario
-    conv = db.query(Conversation).filter(Conversation.id == conv_id, Conversation.user_id == current_user.id).first()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    
-    # Guardar mensaje del usuario
-    user_msg = Message(conversation_id=conv_id, role="user", content=message.get("content", ""))
-    db.add(user_msg)
-    
-    # Respuesta simple de IA
-    response_text = "Gracias por compartir cómo te sientes. Estoy aquí para apoyarte."
-    
-    # Guardar respuesta
-    ai_msg = Message(conversation_id=conv_id, role="assistant", content=response_text)
-    db.add(ai_msg)
-    
-    # Actualizar fecha de conversación
-    conv.updated_at = datetime.utcnow()
-    
-    db.commit()
-    db.refresh(ai_msg)
-    
-    return {"id": ai_msg.id, "role": ai_msg.role, "content": ai_msg.content}
-
-@app.get("/conversations/{conv_id}")
-def get_conversation(conv_id: int, current_user: User = Depends(get_current_user), db=Depends(get_db)):
-    conv = db.query(Conversation).filter(Conversation.id == conv_id, Conversation.user_id == current_user.id).first()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    
-    messages = db.query(Message).filter(Message.conversation_id == conv_id).order_by(Message.created_at).all()
-    return {"id": conv.id, "title": conv.title, "messages": messages}
-
-# ========== ENDPOINTS DE EVALUACIONES ==========
-@app.post("/assessments")
-def save_assessment(assessment: dict, current_user: User = Depends(get_current_user), db=Depends(get_db)):
-    db_assessment = Assessment(
-        user_id=current_user.id,
-        type=assessment.get("type"),
-        score=assessment.get("score"),
-        severity=assessment.get("severity"),
-        answers=str(assessment.get("answers", {}))
-    )
-    db.add(db_assessment)
-    db.commit()
-    db.refresh(db_assessment)
-    return {"id": db_assessment.id, "message": "Evaluación guardada"}
-
-@app.get("/assessments")
-def get_assessments(current_user: User = Depends(get_current_user), db=Depends(get_db)):
-    assessments = db.query(Assessment).filter(Assessment.user_id == current_user.id).all()
-    return assessments
