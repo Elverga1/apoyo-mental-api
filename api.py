@@ -145,22 +145,34 @@ async def health():
 
 @app.post("/register", response_model=UserResponse)
 def register(user_data: UserCreate, db=Depends(get_db)):
-    if db.query(User).filter(User.email == user_data.email).first():
-        raise HTTPException(400, "Email ya registrado")
-    if db.query(User).filter(User.username == user_data.username).first():
-        raise HTTPException(400, "Usuario ya existe")
-
+    
+    db_user = db.query(User).filter(User.email == user_data.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email ya registrado")
+    
+    db_user = db.query(User).filter(User.username == user_data.username).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Usuario ya existe")
+    
     hashed = get_password_hash(user_data.password)
-    user = User(
+    db_user = User(
         email=user_data.email,
         username=user_data.username,
         hashed_password=hashed,
         full_name=user_data.full_name
     )
-    db.add(user)
+    db.add(db_user)
     db.commit()
-    db.refresh(user)
-    return user
+    db.refresh(db_user)
+    
+    return {
+        "id": db_user.id,
+        "email": db_user.email,
+        "username": db_user.username,
+        "full_name": db_user.full_name,
+        "is_active": db_user.is_active,
+        "created_at": db_user.created_at
+    }
 
 @app.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
