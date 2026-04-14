@@ -1,4 +1,4 @@
-# api.py - Versión corregida con orden correcto
+# api.py - Versión corregida con orden adecuado
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -14,7 +14,7 @@ import hashlib
 import secrets
 
 # ========== CONFIGURACIÓN ==========
-SECRET_KEY = os.getenv("SECRET_KEY", "A9SdAQv0Zhvt5vnJlpcDiiAV4m4OTds48EYts0ysBcw")
+SECRET_KEY = os.getenv("SECRET_KEY", "clave-temporal-cambiar-en-produccion")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 10080
 
@@ -24,29 +24,25 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./apoyo_mental.db")
 print(f"📌 Conectando a: {'PostgreSQL' if DATABASE_URL.startswith('postgresql') else 'SQLite'}")
 
 if DATABASE_URL.startswith("postgresql"):
-    # Para PostgreSQL con asyncpg (compatible con Python 3.14)
-    engine = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_size=5,
-        max_overflow=10
-    )
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 else:
-    # Para SQLite local
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()  # <--- Base DEFINIDA AQUÍ
 
 # ========== MODELOS ==========
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
-    username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
+    email = Column(String, unique=True, index=True, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-# Crear tablas
+# Crear tablas (después de definir los modelos)
 Base.metadata.create_all(bind=engine)
 
 # ========== DEPENDENCIA DB ==========
@@ -82,15 +78,12 @@ class Token(BaseModel):
 # ========== AUTENTICACIÓN ==========
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# Funciones de hash (sin bcrypt)
 def get_password_hash(password: str) -> str:
-    """Hashea contraseña usando SHA256"""
     salt = secrets.token_hex(16)
     hash_obj = hashlib.sha256((password + salt).encode())
     return f"{salt}${hash_obj.hexdigest()}"
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifica contraseña"""
     try:
         salt, hash_value = hashed_password.split("$")
         test_hash = hashlib.sha256((plain_password + salt).encode()).hexdigest()
@@ -99,23 +92,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 def authenticate_user(db, username: str, password: str):
-    """Autentica un usuario"""
     user = db.query(User).filter(User.username == username).first()
-    if not user:
-        return False
-    if not verify_password(password, user.hashed_password):
+    if not user or not verify_password(password, user.hashed_password):
         return False
     return user
 
 def create_access_token(data: dict):
-    """Crea un token JWT"""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-# Dependencia para obtener usuario actual desde el token
 def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -133,8 +120,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
     if user is None:
         raise credentials_exception
     return user
+
 # ========== APP ==========
-app = FastAPI(title="Apoyo Mental API")
+app = FastAPI(title="Apoyo Mental API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -155,40 +143,38 @@ async def health():
 
 @app.post("/register", response_model=UserResponse)
 def register(user_data: UserCreate, db=Depends(get_db)):
-    
-    db_user = db.query(User).filter(User.email == user_data.email).first()
-    if db_user:
+    if db.query(User).filter(User.email == user_data.email).first():
         raise HTTPException(status_code=400, detail="Email ya registrado")
-    
-    db_user = db.query(User).filter(User.username == user_data.username).first()
-    if db_user:
+    if db.query(User).filter(User.username == user_data.username).first():
         raise HTTPException(status_code=400, detail="Usuario ya existe")
-    
+
     hashed = get_password_hash(user_data.password)
-    db_user = User(
+    user = User(
         email=user_data.email,
         username=user_data.username,
         hashed_password=hashed,
         full_name=user_data.full_name
     )
-    db.add(db_user)
+    db.add(user)
     db.commit()
-    db.refresh(db_user)
-    
+    db.refresh(user)
     return {
-        "id": db_user.id,
-        "email": db_user.email,
-        "username": db_user.username,
-        "full_name": db_user.full_name,
-        "is_active": db_user.is_active,
-        "created_at": db_user.created_at
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+        "created_at": user.created_at
     }
 
 @app.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(401, detail="Usuario o contraseña incorrectos")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario o contraseña incorrectos",
+        )
     token = create_access_token(data={"sub": user.username})
     return {"access_token": token, "token_type": "bearer"}
 
