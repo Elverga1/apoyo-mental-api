@@ -19,11 +19,17 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 10080
 
 # ========== BASE DE DATOS ==========
-DATABASE_URL = "postgresql://apoyo_user:fpq72VnYFv6mQDMpvlo3HUKSc0GYIDvI@dpg-d76un68gjchc73dl7o60-a.oregon-postgres.render.com/apoyo_mental"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./apoyo_mental.db")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()  # <--- Base definida correctamente
+# ---> ¡ESTA ES LA PARTE IMPORTANTE! <---
+print(f"📌 Conectando a: {'PostgreSQL' if DATABASE_URL.startswith('postgresql') else 'SQLite'}")
+
+if DATABASE_URL.startswith("postgresql"):
+    # Configuración para PostgreSQL en Render
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+else:
+    # Configuración para SQLite local
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 # ========== MODELOS ==========
 class User(Base):
