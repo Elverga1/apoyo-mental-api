@@ -21,14 +21,18 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 10080
 # ========== BASE DE DATOS ==========
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./apoyo_mental.db")
 
-# ---> ¡ESTA ES LA PARTE IMPORTANTE! <---
 print(f"📌 Conectando a: {'PostgreSQL' if DATABASE_URL.startswith('postgresql') else 'SQLite'}")
 
 if DATABASE_URL.startswith("postgresql"):
-    # Configuración para PostgreSQL en Render
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    # Para PostgreSQL con asyncpg (compatible con Python 3.14)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10
+    )
 else:
-    # Configuración para SQLite local
+    # Para SQLite local
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 # ========== MODELOS ==========
