@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: apoyo-mental-api
-    runtime: python
-    repo: https://github.com/Elvergal/apoyo-mental-api
-    plan: free
-    region: oregon
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
